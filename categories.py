@@ -1,47 +1,45 @@
-"""Функции для работы с категориями событий."""
+"""Операции над коллекцией категорий событий."""
+
+from models import Category
 
 
 def add_category(
-    categories: dict[int, dict],
+    categories: list[Category],
     name: str,
     description: str = "",
-) -> int:
-    """Добавить категорию и вернуть её id."""
-    new_id = max(categories.keys(), default=0) + 1
-    categories[new_id] = {
-        "id": new_id,
-        "name": name,
-        "description": description,
-    }
-    return new_id
+) -> Category:
+    """Создать категорию, добавить её в коллекцию и вернуть объект."""
+    new_id = max((category.id for category in categories), default=0) + 1
+    category = Category(new_id, name, description)
+    categories.append(category)
+    return category
 
 
 def find_category_by_name(
-    categories: dict[int, dict],
+    categories: list[Category],
     name: str,
-) -> dict | None:
-    """Найти категорию по точному названию (без учёта регистра)."""
-    name = name.lower()
-    for category in categories.values():
-        if category["name"].lower() == name:
-            return category
-    return None
+) -> Category | None:
+    """Найти категорию по точному названию без учёта регистра."""
+    normalized_name = name.casefold()
+    return next(
+        (
+            category
+            for category in categories
+            if category.name.casefold() == normalized_name
+        ),
+        None,
+    )
 
 
-def list_category_names(
-    categories: dict[int, dict],
-) -> list[str]:
+def list_category_names(categories: list[Category]) -> list[str]:
     """Вернуть список названий категорий."""
-    return [c["name"] for c in categories.values()]
+    return [category.name for category in categories]
 
 
-def show_categories(categories: dict[int, dict]) -> None:
+def show_categories(categories: list[Category]) -> None:
     """Вывести список категорий в консоль."""
     if not categories:
         print("Категорий пока нет.")
         return
-    for category in categories.values():
-        print(
-            f"[{category['id']}] {category['name']} — "
-            f"{category['description']}"
-        )
+    for category in categories:
+        print(f"[{category.id}] {category}")

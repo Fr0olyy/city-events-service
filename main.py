@@ -1,4 +1,5 @@
 """Точка запуска приложения «Сервис учета городских событий»."""
+
 from datetime import date
 
 from categories import add_category, show_categories
@@ -6,55 +7,18 @@ from events import (
     add_event,
     filter_events_by_date,
     find_events,
-    get_event_status,
     show_events,
 )
+from models import Category, Event, Place, Registration, User
 from places import add_place, find_places, show_places
 from registrations import (
     cancel_registration,
     create_registration,
+    is_registration_open,
     show_registrations,
 )
-from storage import load_json, save_json
+from storage import load_all_data, save_all_data
 from utils import input_date, input_int, input_str
-
-DATA_PLACES = "data/places.json"
-DATA_CATEGORIES = "data/categories.json"
-DATA_EVENTS = "data/events.json"
-DATA_REGISTRATIONS = "data/registrations.json"
-
-
-def load_all_data() -> tuple[dict, dict, dict, list]:
-    """Загрузить все данные проекта из JSON-файлов.
-
-    Ключи словарей в JSON хранятся как строки, поэтому приводим
-    их обратно к int.
-    """
-    places = load_json(DATA_PLACES, {})
-    places = {int(key): value for key, value in places.items()}
-
-    categories = load_json(DATA_CATEGORIES, {})
-    categories = {int(key): value for key, value in categories.items()}
-
-    events = load_json(DATA_EVENTS, {})
-    events = {int(key): value for key, value in events.items()}
-
-    registrations = load_json(DATA_REGISTRATIONS, [])
-
-    return places, categories, events, registrations
-
-
-def save_all_data(
-    places: dict,
-    categories: dict,
-    events: dict,
-    registrations: list,
-) -> None:
-    """Сохранить все данные проекта в JSON-файлы."""
-    save_json(DATA_PLACES, places)
-    save_json(DATA_CATEGORIES, categories)
-    save_json(DATA_EVENTS, events)
-    save_json(DATA_REGISTRATIONS, registrations)
 
 
 def print_menu() -> None:
@@ -75,123 +39,146 @@ def print_menu() -> None:
     print("0. Выход")
 
 
-def handle_find_place(places: dict) -> None:
+def handle_find_place(places: list[Place]) -> None:
     """Обработать поиск места по подстроке."""
     if not places:
         print("Мест пока нет.")
         return
-    query = input_str("Подстрока названия или адреса: ")
-    found = find_places(places, query)
+    found = find_places(places, input_str("Подстрока названия или адреса: "))
     if not found:
         print("Ничего не найдено.")
         return
     for place in found:
-        print(f"[{place['id']}] {place['name']} — "
-              f"{place['address']}")
+        print(f"[{place.id}] {place}")
 
 
-def handle_add_place(places: dict) -> None:
+def handle_add_place(places: list[Place]) -> None:
     """Обработать добавление места."""
-    name = input_str("Название места: ")
-    address = input_str("Адрес: ")
-    place_id = add_place(places, name, address)
-    print(f"Место добавлено, id={place_id}")
+    place = add_place(
+        places,
+        input_str("Название места: "),
+        input_str("Адрес: "),
+    )
+    print(f"Место добавлено, id={place.id}")
 
 
-def handle_add_category(categories: dict) -> None:
+def handle_add_category(categories: list[Category]) -> None:
     """Обработать добавление категории."""
     name = input_str("Название категории: ")
     description = input("Описание (необязательно): ").strip()
-    category_id = add_category(categories, name, description)
-    print(f"Категория добавлена, id={category_id}")
+    category = add_category(categories, name, description)
+    print(f"Категория добавлена, id={category.id}")
+
+
+def _find_place(places: list[Place], place_id: int) -> Place | None:
+    return next((place for place in places if place.id == place_id), None)
+
+
+def _find_category(
+    categories: list[Category],
+    category_id: int,
+) -> Category | None:
+    return next(
+        (category for category in categories if category.id == category_id),
+        None,
+    )
+
+
+def _find_event(events: list[Event], event_id: int) -> Event | None:
+    return next((event for event in events if event.id == event_id), None)
 
 
 def handle_add_event(
-    events: dict,
-    places: dict,
-    categories: dict,
+    events: list[Event],
+    places: list[Place],
+    categories: list[Category],
 ) -> None:
-    """Обработать добавление события."""
+    """Обработать добавление события с объектами места и категории."""
     if not places:
         print("Сначала добавьте хотя бы одно место.")
         return
     if not categories:
         print("Сначала добавьте хотя бы одну категорию.")
         return
-    title = input_str("Название события: ")
 
+    title = input_str("Название события: ")
     show_places(places)
-    place_id = input_int("id места: ")
-    if place_id not in places:
+    place = _find_place(places, input_int("id места: "))
+    if place is None:
         print("Место с таким id не найдено.")
         return
 
     show_categories(categories)
-    category_id = input_int("id категории: ")
-    if category_id not in categories:
+    category = _find_category(categories, input_int("id категории: "))
+    if category is None:
         print("Категория с таким id не найдена.")
         return
 
-    iso_date = input_date("Дата (ДД.ММ.ГГГГ): ")
-    event_id = add_event(
-        events,
-        title,
-        place_id,
-        category_id,
-        date.fromisoformat(iso_date),
-    )
-    print(f"Событие добавлено, id={event_id}")
+    event_date = date.fromisoformat(input_date("Дата (ДД.ММ.ГГГГ): "))
+    event = add_event(events, title, place, category, event_date)
+    print(f"Событие добавлено, id={event.id}")
 
 
-def handle_find_event(events: dict) -> None:
+def handle_find_event(events: list[Event]) -> None:
     """Обработать поиск события по названию."""
-    query = input_str("Подстрока названия: ")
-    found = find_events(events, query)
+    found = find_events(events, input_str("Подстрока названия: "))
     if not found:
         print("Ничего не найдено.")
         return
     for event in found:
-        print(f"[{event['id']}] {event['title']} | "
-              f"{event['event_date']}")
+        print(f"[{event.id}] {event}")
 
 
-def handle_events_on_date(events: dict) -> None:
-    """Показать события на выбранную дату."""
-    iso_date = input_date("Дата (ДД.ММ.ГГГГ): ")
-    on_date = date.fromisoformat(iso_date)
+def handle_events_on_date(events: list[Event]) -> None:
+    """Показать события на выбранную дату и их статус."""
+    on_date = date.fromisoformat(input_date("Дата (ДД.ММ.ГГГГ): "))
     found = filter_events_by_date(events, on_date)
     if not found:
         print("На эту дату событий нет.")
         return
     for event in found:
-        print(f"[{event['id']}] {event['title']} | "
-              f"{get_event_status(on_date)}")
+        print(f"[{event.id}] {event.title} | {event.get_status()}")
+
+
+def _get_or_create_user(users: list[User], name: str) -> User:
+    user = next(
+        (person for person in users if person.name.casefold() == name.casefold()),
+        None,
+    )
+    if user is not None:
+        return user
+    user_id = max((person.id for person in users), default=0) + 1
+    user = User(user_id, name)
+    users.append(user)
+    return user
 
 
 def handle_create_registration(
-    registrations: list,
-    events: dict,
+    registrations: list[Registration],
+    events: list[Event],
+    users: list[User],
 ) -> None:
-    """Обработать создание регистрации на событие."""
+    """Обработать создание регистрации на выбранное событие."""
     if not events:
         print("Событий пока нет.")
         return
     show_events(events)
-    event_id = input_int("id события: ")
-    if event_id not in events:
+    event = _find_event(events, input_int("id события: "))
+    if event is None:
         print("Событие с таким id не найдено.")
         return
-    user_name = input_str("Ваше имя: ")
+    if not is_registration_open(registrations, event):
+        print("Ошибка: регистрация на это событие уже существует")
+        return
+    user = _get_or_create_user(users, input_str("Ваше имя: "))
     try:
-        registration = create_registration(
-            registrations, event_id, user_name
-        )
-        print(f"Регистрация создана, id={registration['id']}")
+        registration = create_registration(registrations, event, user)
+        print(f"Регистрация создана, id={registration.id}")
     except ValueError as error:
         print(f"Ошибка: {error}")
 
 
-def handle_cancel_registration(registrations: list) -> None:
+def handle_cancel_registration(registrations: list[Registration]) -> None:
     """Обработать отмену регистрации."""
     if not registrations:
         print("Регистраций пока нет.")
@@ -201,12 +188,12 @@ def handle_cancel_registration(registrations: list) -> None:
     if cancel_registration(registrations, registration_id):
         print("Регистрация отменена.")
     else:
-        print("Регистрация с таким id не найдена.")
+        print("Активная регистрация с таким id не найдена.")
 
 
 def main() -> None:
-    """Точка запуска приложения: меню и вызов функций проекта."""
-    places, categories, events, registrations = load_all_data()
+    """Загрузить данные, запустить меню и сохранить изменения."""
+    places, categories, events, users, registrations = load_all_data()
 
     while True:
         print_menu()
@@ -214,7 +201,7 @@ def main() -> None:
 
         if choice == 0:
             break
-        elif choice == 1:
+        if choice == 1:
             show_events(events)
         elif choice == 2:
             show_places(places)
@@ -233,7 +220,7 @@ def main() -> None:
         elif choice == 9:
             handle_events_on_date(events)
         elif choice == 10:
-            handle_create_registration(registrations, events)
+            handle_create_registration(registrations, events, users)
         elif choice == 11:
             show_registrations(registrations)
         elif choice == 12:
@@ -241,7 +228,7 @@ def main() -> None:
         else:
             print("Неизвестная команда, попробуйте снова.")
 
-    save_all_data(places, categories, events, registrations)
+    save_all_data(places, categories, events, users, registrations)
     print("Данные сохранены. До свидания!")
 
 
